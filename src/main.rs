@@ -38,6 +38,7 @@ struct GraphqlData {
 
 struct CliArgs {
     token: Option<String>,
+    username: Option<String>,
 }
 
 fn print_usage() {
@@ -56,6 +57,13 @@ fn parse_args() -> CliArgs {
         token: match args.len() {
             0 => None,
             _ => Some(args[0].clone()),
+        },
+        username: match args.len() {
+            1 => {
+                println!("No username provided!");
+                std::process::exit(-1);
+            }
+            _ => Some(args[1].clone()),
         },
     }
 }
@@ -90,17 +98,13 @@ async fn main() -> octocrab::Result<()> {
 
     // Build a JSON map of variables:
     let mut vars = HashMap::new();
-    vars.insert("login".to_string(), json!("EinSatzMitX"));
+    vars.insert("login".to_string(), json!(args.username));
 
     // Wrap entire GraphQL request in a serde_json::Value
     let payload = json!({
       "query": query,
       "variables": vars
     });
-
-    let response = gh
-        ._post("https://api.github.com/graphql", Some(&payload))
-        .await?; // response: http::Response<…>
 
     // 2. Deserialize the body into a serde_json::Value
     let resp_value: serde_json::Value = gh
