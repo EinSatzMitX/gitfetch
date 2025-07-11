@@ -2,44 +2,73 @@
 use image::ImageReader;
 use octocrab::{Octocrab, models::SimpleUser};
 
-use serde::Deserialize;
+use clap::{ArgAction, Parser};
+use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use std::{collections::HashMap, env};
 use viuer::{Config, print_from_file};
 
 #[derive(Deserialize, Debug)]
-struct ContribDay {
+#[serde(rename_all = "camelCase")]
+struct ContributionDays {
     date: String,
-    contrib_count: u32,
+    contribution_count: u32,
 }
 
 #[derive(Deserialize, Debug)]
-struct Week {
-    contrib_days: Vec<ContribDay>,
+#[serde(rename_all = "camelCase")]
+struct Weeks {
+    contribution_days: Vec<ContributionDays>,
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 struct ContributionCalendar {
-    weeks: Vec<Week>,
+    weeks: Vec<Weeks>,
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 struct ContributionsCollection {
     contribution_calendar: ContributionCalendar,
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 struct UserData {
+    login: String,         // maps from `login`
+    name: Option<String>,  // `name` can be null
+    email: Option<String>, // likewise
+    bio: Option<String>,
+    company: Option<String>,
+    location: Option<String>,
+    website_url: Option<String>,
+    twitter_username: Option<String>,
+
+    avatar_url: String,
     contributions_collection: ContributionsCollection,
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 struct GraphqlData {
     user: UserData,
 }
 
+#[derive(Deserialize, Debug)]
+struct GraphqlResponse {
+    data: GraphqlData,
+}
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
 struct CliArgs {
+    // personal github access token
+    #[arg(short, long, action = ArgAction::Set)]
     token: Option<String>,
+
+    // Github username to fetch
+    #[arg(short = 'u', long = "user", action = ArgAction::Set, required = true)]
     username: Option<String>,
 }
 
@@ -47,36 +76,39 @@ fn print_usage() {
     println!("Usage: gitfetch API_TOKEN");
 }
 
-fn parse_args() -> CliArgs {
-    // skip the first arg (its the program name)
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    // if args.is_empty() {
-    //     print_usage();
-    //     std::process::exit(-1);
-    // }
+fn sparkline(data: &[u32]) -> String {
+    let max = *data.iter().max().unwrap_or(&1) as f32;
+    data.iter()
+        .map(|&v| {
+            let idx = ((v as f32 / max) * 7.0).round() as usize;
+            ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"][idx.min(7)]
+        })
+        .collect()
+}
 
-    CliArgs {
-        token: match args.len() {
-            0 => None,
-            _ => Some(args[0].clone()),
-        },
-        username: match args.len() {
-            1 => {
-                println!("No username provided!");
-                std::process::exit(-1);
-            }
-            _ => Some(args[1].clone()),
-        },
-    }
+/* Sparkline representation, but it scales logarithmically */
+fn sparkline_log(data: &[u32]) -> String {
+    const BLOCKS: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+
+    // compute max+1 once for the denominator
+    let max_ln = (*data.iter().max().unwrap_or(&0) as f32 + 1.0).ln();
+    data.iter()
+        .map(|&v| {
+            // +1 so ln(0) isn't a problem
+            let frac = (v as f32 + 1.0).ln() / max_ln;
+            let idx = (frac * 7.0).round().clamp(0.0, 7.0) as usize;
+            BLOCKS[idx]
+        })
+        .collect()
 }
 
 #[tokio::main]
 async fn main() -> octocrab::Result<()> {
-    let args = parse_args();
+    let args = CliArgs::parse();
     let gh;
-    if let Some(tok) = args.token {
+    if let Some(tok) = &args.token {
         println!("got a token with length: {}", tok.len());
-        gh = Octocrab::builder().personal_token(tok).build()?;
+        gh = Octocrab::builder().personal_token(tok.clone()).build()?;
     } else {
         println!("No token provided, you may be rate limited!");
         gh = Octocrab::builder().build()?;
@@ -85,6 +117,14 @@ async fn main() -> octocrab::Result<()> {
       query($login: String!) {
         user(login: $login) {
           avatarUrl(size: 256)
+          login
+          name
+          email
+          bio
+          company
+          location
+          websiteUrl
+          twitterUsername
           contributionsCollection {
             contributionCalendar {
               weeks {
@@ -101,7 +141,7 @@ async fn main() -> octocrab::Result<()> {
 
     // Build a JSON map of variables:
     let mut vars = HashMap::new();
-    vars.insert("login".to_string(), json!(args.username));
+    vars.insert("login".to_string(), json!(&args.username));
 
     // Wrap entire GraphQL request in a serde_json::Value
     let payload = json!({
@@ -109,33 +149,31 @@ async fn main() -> octocrab::Result<()> {
       "variables": vars
     });
 
-    // 2. Deserialize the body into a serde_json::Value
+    // Deserialize the body into a serde_json::Value
     let resp_value: serde_json::Value = gh
         .post::<serde_json::Value, _>("https://api.github.com/graphql", Some(&payload))
         .await?;
 
-    // 3) Extract the avatar URL
-    let avatar_url = resp_value["data"]["user"]["avatarUrl"]
-        .as_str()
-        .ok_or("`avatarUrl` missing")
-        .unwrap();
+    // Deserialize into your strongly‐typed model:
+    let resp: GraphqlResponse =
+        serde_json::from_value(resp_value).expect("failed to deserialize GraphQL response");
 
-    // 4) Fetch the raw image bytes with reqwest
-    let img_bytes = reqwest::get(avatar_url)
+    let user = resp.data.user;
+
+    // Fetch the raw image bytes with reqwest
+    let img_bytes = reqwest::get(user.avatar_url)
         .await
         .unwrap()
         .bytes()
         .await
         .unwrap();
 
-    // 5) Decode into an image::DynamicImage
+    // Decode into an image::DynamicImage
     let img = ImageReader::new(std::io::Cursor::new(img_bytes))
         .with_guessed_format()
         .unwrap()
         .decode()
         .unwrap();
-
-    // let img_path = "avatar.png";
 
     let config = Config {
         // position on the screen:
@@ -149,7 +187,36 @@ async fn main() -> octocrab::Result<()> {
         ..Default::default()
     };
 
+    let mut days: Vec<(String, u32)> = Vec::new();
+    for week in user.contributions_collection.contribution_calendar.weeks {
+        for day in week.contribution_days {
+            days.push((day.date, day.contribution_count));
+        }
+    }
+    let counts: Vec<u32> = days.iter().map(|(_, c)| *c).collect();
+
+    let chart = sparkline_log(&counts);
+
+    /* Section, where the output is printed */
+
     viuer::print(&img, &config).unwrap();
+    print!("Github:\t{}", user.login);
+    if let Some(name) = &user.name {
+        print!("\tName:\t{}", name);
+    }
+    // if let Some(email) = &user.email {
+    //     print!("\tEmail:\t{}", email);
+    // }
+    // if let Some(company) = &user.company {
+    //     print!("\tCompany:\t{}", company);
+    // }
+    // if let Some(bio) = &user.bio {
+    //     print!("\tBio:\n{}", bio);
+    // }
+    //
+    println!();
+    println!("Contribution Chart over the last year:");
+    println!("{}", chart);
 
     Ok(())
 }
