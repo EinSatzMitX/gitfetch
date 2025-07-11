@@ -17,4 +17,17 @@ fn main(){
 }
 ```
 
+## Usage
+
+To use gitfetch without a token (keep in mind, a username is required to be
+passed via the `-u` or `--user` flag) `gitfetch -- -u EinSatzMitX`
+
+If you want to make sure not to get rate limited, pass in a token like this
+
+`gitfetch -- -t MY_TOKEN -u EinSatzMitX`
+
+`gitfetch -- --token "$(cat path_to_token.txt)" -u EinSatzMitX`
+
 ## Examples
+
+<img src ="example1.png"/>

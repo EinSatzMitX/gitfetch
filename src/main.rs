@@ -88,16 +88,32 @@ fn sparkline(data: &[u32]) -> String {
 
 /* Sparkline representation, but it scales logarithmically */
 fn sparkline_log(data: &[u32]) -> String {
+    // Unicode blocks for height
     const BLOCKS: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
-    // compute max+1 once for the denominator
+    // GitHub contribution colors (hex → RGB)
+    const COLORS: [(u8, u8, u8); 5] = [
+        (33, 110, 57),   // level 4: darker green
+        (48, 161, 78),   // level 3: dark green
+        (64, 196, 99),   // level 2: medium green
+        (155, 233, 168), // level 1: light green
+        (235, 237, 240), // level 0: very light gray (no contributions)
+    ];
+
+    // Precompute ln(max+1)
     let max_ln = (*data.iter().max().unwrap_or(&0) as f32 + 1.0).ln();
+
     data.iter()
         .map(|&v| {
-            // +1 so ln(0) isn't a problem
+            // log‐scale fraction in [0,1]
             let frac = (v as f32 + 1.0).ln() / max_ln;
-            let idx = (frac * 7.0).round().clamp(0.0, 7.0) as usize;
-            BLOCKS[idx]
+            // height index based on frac
+            let h = (frac * 7.0).round().clamp(0.0, 7.0) as usize;
+            // color level 0–4
+            let lvl = (frac * 4.0).round().clamp(0.0, 4.0) as usize;
+            let (r, g, b) = COLORS[lvl];
+            // ANSI 24‐bit color: set fg to (r,g,b), print block, reset
+            format!("\x1b[38;2;{};{};{}m{}\x1b[0m", r, g, b, BLOCKS[h])
         })
         .collect()
 }
@@ -181,8 +197,8 @@ async fn main() -> octocrab::Result<()> {
         y: 0,
         absolute_offset: false,
         // resize to fit width/height:
-        width: Some(40),
-        height: Some(20),
+        width: Some(20),
+        height: Some(10),
         // other defaults:
         ..Default::default()
     };
