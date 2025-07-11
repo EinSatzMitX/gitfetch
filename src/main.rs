@@ -1,9 +1,11 @@
 #![allow(dead_code)]
+use image::ImageReader;
 use octocrab::{Octocrab, models::SimpleUser};
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, env};
+use viuer::{Config, print_from_file};
 
 #[derive(Deserialize, Debug)]
 struct ContribDay {
@@ -82,6 +84,7 @@ async fn main() -> octocrab::Result<()> {
     let query = r#"
       query($login: String!) {
         user(login: $login) {
+          avatarUrl(size: 256)
           contributionsCollection {
             contributionCalendar {
               weeks {
@@ -111,7 +114,42 @@ async fn main() -> octocrab::Result<()> {
         .post::<serde_json::Value, _>("https://api.github.com/graphql", Some(&payload))
         .await?;
 
-    println!("{:#}", resp_value);
+    // 3) Extract the avatar URL
+    let avatar_url = resp_value["data"]["user"]["avatarUrl"]
+        .as_str()
+        .ok_or("`avatarUrl` missing")
+        .unwrap();
+
+    // 4) Fetch the raw image bytes with reqwest
+    let img_bytes = reqwest::get(avatar_url)
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+
+    // 5) Decode into an image::DynamicImage
+    let img = ImageReader::new(std::io::Cursor::new(img_bytes))
+        .with_guessed_format()
+        .unwrap()
+        .decode()
+        .unwrap();
+
+    // let img_path = "avatar.png";
+
+    let config = Config {
+        // position on the screen:
+        x: 0,
+        y: 0,
+        absolute_offset: false,
+        // resize to fit width/height:
+        width: Some(40),
+        height: Some(20),
+        // other defaults:
+        ..Default::default()
+    };
+
+    viuer::print(&img, &config).unwrap();
 
     Ok(())
 }
