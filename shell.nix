@@ -5,6 +5,9 @@ pkgs.mkShell {
   # Additional tooling
   nativeBuildInputs = with pkgs; [
     pkg-config
+    rustc
+    cargo
+    rust-analyzer
   ];
   buildInputs = with pkgs; [
     openssl

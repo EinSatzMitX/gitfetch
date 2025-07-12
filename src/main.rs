@@ -1,12 +1,14 @@
-#![allow(dead_code)]
+// #![allow(dead_code)]
 use image::ImageReader;
-use octocrab::{Octocrab, models::SimpleUser};
+use octocrab::Octocrab;
 
 use clap::{ArgAction, Parser};
-use serde::{Deserialize, de::DeserializeOwned};
-use serde_json::{Value, json};
-use std::{collections::HashMap, env};
-use viuer::{Config, print_from_file};
+use serde::Deserialize;
+use serde_json::{from_str, json};
+use std::{
+    collections::HashMap, env::home_dir, fs::read_to_string, path::PathBuf, thread::current,
+};
+use viuer::Config;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -72,33 +74,24 @@ struct CliArgs {
     username: Option<String>,
 }
 
-fn print_usage() {
-    println!("Usage: gitfetch API_TOKEN");
-}
-
-fn sparkline(data: &[u32]) -> String {
-    let max = *data.iter().max().unwrap_or(&1) as f32;
-    data.iter()
-        .map(|&v| {
-            let idx = ((v as f32 / max) * 7.0).round() as usize;
-            ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"][idx.min(7)]
-        })
-        .collect()
-}
-
 /* Sparkline representation, but it scales logarithmically */
-fn sparkline_log(data: &[u32]) -> String {
+fn sparkline_log(data: &[u32], color_levels: Option<Vec<(u8, u8, u8)>>) -> String {
     // Unicode blocks for height
     const BLOCKS: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
     // GitHub contribution colors (hex → RGB)
-    const COLORS: [(u8, u8, u8); 5] = [
+    const DEFAULT_COLORS: [(u8, u8, u8); 5] = [
         (33, 110, 57),   // level 4: darker green
         (48, 161, 78),   // level 3: dark green
         (64, 196, 99),   // level 2: medium green
         (155, 233, 168), // level 1: light green
         (235, 237, 240), // level 0: very light gray (no contributions)
     ];
+
+    let colors = match color_levels {
+        Some(ref custom) if custom.len() >= 5 => custom.clone(),
+        _ => DEFAULT_COLORS.to_vec(),
+    };
 
     // Precompute ln(max+1)
     let max_ln = (*data.iter().max().unwrap_or(&0) as f32 + 1.0).ln();
@@ -111,16 +104,46 @@ fn sparkline_log(data: &[u32]) -> String {
             let h = (frac * 7.0).round().clamp(0.0, 7.0) as usize;
             // color level 0–4
             let lvl = (frac * 4.0).round().clamp(0.0, 4.0) as usize;
-            let (r, g, b) = COLORS[lvl];
+            let (r, g, b) = colors[lvl];
             // ANSI 24‐bit color: set fg to (r,g,b), print block, reset
             format!("\x1b[38;2;{};{};{}m{}\x1b[0m", r, g, b, BLOCKS[h])
         })
         .collect()
 }
 
+#[derive(Debug, Deserialize)]
+struct GitfetchConfig {
+    color_levels: Option<Vec<(u8, u8, u8)>>,
+    username_color: Option<(u8, u8, u8)>,
+}
+
+fn load_config() -> Option<GitfetchConfig> {
+    let mut path = PathBuf::new();
+
+    if let Some(home) = home_dir() {
+        path.push(home);
+        path.push(".config/gitfetch/config.json");
+    } else {
+        eprintln!("Could not determine home directory!");
+        return None;
+    }
+
+    if !path.exists() {
+        eprintln!("No config file found at {:?}", path);
+        return None;
+    }
+
+    let contents = read_to_string(&path).ok().unwrap();
+    let config: GitfetchConfig = from_str(&contents)
+        .ok()
+        .expect("JSON contents can't be read! (Did you wriet the json file by hand?)");
+    Some(config)
+}
+
 #[tokio::main]
 async fn main() -> octocrab::Result<()> {
     let args = CliArgs::parse();
+    let mut gitfetch_config = load_config();
     let gh;
     if let Some(tok) = &args.token {
         println!("got a token with length: {}", tok.len());
@@ -211,7 +234,10 @@ async fn main() -> octocrab::Result<()> {
     }
     let counts: Vec<u32> = days.iter().map(|(_, c)| *c).collect();
 
-    let chart = sparkline_log(&counts);
+    let color_levels = gitfetch_config
+        .as_ref()
+        .and_then(|cfg| cfg.color_levels.clone());
+    let chart = sparkline_log(&counts, color_levels);
 
     /* Section, where the output is printed */
 

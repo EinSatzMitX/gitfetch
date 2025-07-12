@@ -24,10 +24,37 @@ passed via the `-u` or `--user` flag) `gitfetch -- -u EinSatzMitX`
 
 If you want to make sure not to get rate limited, pass in a token like this
 
-`gitfetch -- -t MY_TOKEN -u EinSatzMitX`
+```
+gitfetch -- -t MY_TOKEN -u EinSatzMitX
 
-`gitfetch -- --token "$(cat path_to_token.txt)" -u EinSatzMitX`
+gitfetch -- --token "$(cat path_to_token.txt)" -u EinSatzMitX
+```
+
+You can even customize gitfetch (More customization options coming soon!) by
+writing to `~/.config/gitfetch/config.json`
+
+```Json
+  "color_levels": [
+    [237, 148, 85],
+    [255, 187, 112],
+    [255, 236, 158],
+    [255, 251, 218],
+    [255, 255, 240]
+  ],
+  "username_color": [255, 215, 0]
+}
+```
+
+_Example for a very basic change of colors_
 
 ## Examples
 
 <img src ="example1.png"/>
+
+<img src ="example2.png"/>
+
+_Example for a very basic change of colors_
+
+## TODO
+
+- [ ] Add customisability (what a hard word to pronounce)
