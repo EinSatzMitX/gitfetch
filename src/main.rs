@@ -115,6 +115,14 @@ fn sparkline_log(data: &[u32], color_levels: Option<Vec<(u8, u8, u8)>>) -> Strin
 struct GitfetchConfig {
     color_levels: Option<Vec<(u8, u8, u8)>>,
     username_color: Option<(u8, u8, u8)>,
+    string_modules: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug)]
+struct StringModule {
+    contents: String,
+    // The name, that will be used in the json config
+    name: String,
 }
 
 fn load_config() -> Option<GitfetchConfig> {
@@ -136,7 +144,7 @@ fn load_config() -> Option<GitfetchConfig> {
     let contents = read_to_string(&path).ok().unwrap();
     let config: GitfetchConfig = from_str(&contents)
         .ok()
-        .expect("JSON contents can't be read! (Did you wriet the json file by hand?)");
+        .expect("JSON contents can't be read! (Did you write the json file by hand?)");
     Some(config)
 }
 
@@ -214,7 +222,7 @@ async fn main() -> octocrab::Result<()> {
         .decode()
         .unwrap();
 
-    let config = Config {
+    let viuer_config = Config {
         // position on the screen:
         x: 0,
         y: 0,
@@ -225,11 +233,13 @@ async fn main() -> octocrab::Result<()> {
         // other defaults:
         ..Default::default()
     };
+    let mut total_contribs: u32 = 0;
 
     let mut days: Vec<(String, u32)> = Vec::new();
     for week in user.contributions_collection.contribution_calendar.weeks {
         for day in week.contribution_days {
             days.push((day.date, day.contribution_count));
+            total_contribs += day.contribution_count;
         }
     }
     let counts: Vec<u32> = days.iter().map(|(_, c)| *c).collect();
@@ -238,27 +248,78 @@ async fn main() -> octocrab::Result<()> {
         .as_ref()
         .and_then(|cfg| cfg.color_levels.clone());
     let chart = sparkline_log(&counts, color_levels);
+    let chart_module = StringModule {
+        contents: chart,
+        name: "chart_module".to_string(),
+    };
+
+    let github_name_colors = gitfetch_config
+        .as_ref()
+        .and_then(|cfg| cfg.username_color.clone())
+        .unwrap();
+
+    let unique_name_module = StringModule {
+        contents: format!(
+            "\x1b[38;2;{};{};{}mGithub:\t{}\x1b[0m",
+            github_name_colors.0, github_name_colors.1, github_name_colors.2, user.login
+        ),
+        name: "unique_name_module".to_string(),
+    };
+
+    let custom_name_module = StringModule {
+        contents: match &user.name {
+            Some(name) => {
+                format!("Display name: {}", name)
+            }
+            None => {
+                format!("")
+            }
+        },
+        name: "custom_name_module".to_string(),
+    };
+
+    let total_contribs_fmt_module = StringModule {
+        contents: format!("Total Contributions over the last year: {}", total_contribs),
+        name: "total_contribs_fmt_module".to_string(),
+    };
+
+    let default_modules: Vec<StringModule> = vec![
+        unique_name_module,
+        custom_name_module,
+        total_contribs_fmt_module,
+        chart_module,
+        // …add new modules here in the desired default order…
+    ];
+
+    // 2) Also build a lookup map so we can grab modules by name fast
+    let mut module_map: HashMap<_, _> = default_modules
+        .iter()
+        .map(|m| (m.name.clone(), m.clone()))
+        .collect();
+
+    // 3) Decide final order
+    let modules_to_render: Vec<StringModule> = if let Some(cfg) = &gitfetch_config {
+        if let Some(order) = &cfg.string_modules {
+            // User-specified order: keep only known names, in that sequence
+            order
+                .iter()
+                .filter_map(|name| module_map.remove(name))
+                .collect()
+        } else {
+            // No user order ⇒ use your default Vec
+            default_modules.clone()
+        }
+    } else {
+        // No config at all ⇒ default
+        default_modules.clone()
+    };
 
     /* Section, where the output is printed */
 
-    viuer::print(&img, &config).unwrap();
-    print!("Github:\t{}", user.login);
-    if let Some(name) = &user.name {
-        print!("\tName:\t{}", name);
+    viuer::print(&img, &viuer_config).unwrap();
+    for i in modules_to_render {
+        println!("{}", i.contents);
     }
-    // if let Some(email) = &user.email {
-    //     print!("\tEmail:\t{}", email);
-    // }
-    // if let Some(company) = &user.company {
-    //     print!("\tCompany:\t{}", company);
-    // }
-    // if let Some(bio) = &user.bio {
-    //     print!("\tBio:\n{}", bio);
-    // }
-    //
-    println!();
-    println!("Contribution Chart over the last year:");
-    println!("{}", chart);
 
     Ok(())
 }

@@ -34,6 +34,7 @@ You can even customize gitfetch (More customization options coming soon!) by
 writing to `~/.config/gitfetch/config.json`
 
 ```Json
+{
   "color_levels": [
     [237, 148, 85],
     [255, 187, 112],
@@ -51,7 +52,7 @@ _Example for a very basic change of colors_
 
 <img src ="example1.png"/>
 
-<img src ="example2.png"/>
+<img src ="example3.png"/>
 
 _Example for a very basic change of colors_
 
