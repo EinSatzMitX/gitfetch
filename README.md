@@ -11,6 +11,27 @@ fact of github only accepting 60 requests per **Hour**.
 
 ## Building
 
+### Nix
+
+This project comes packaged as `flake.nix`, `default.nix` and `shell.nix`. For
+development, you can enter the dev shell by running
+
+```
+nix develop
+
+cargo build
+```
+
+If you're just interested in building the project and don't want to modify it:
+
+```
+nix build
+```
+
+This produces a binary in `result/bin/`
+
+### Other distributions
+
 ```Rust
 fn main(){
     todo!()
@@ -42,7 +63,14 @@ writing to `~/.config/gitfetch/config.json`
     [255, 251, 218],
     [255, 255, 240]
   ],
-  "username_color": [255, 215, 0]
+  "username_color": [255, 215, 0],
+  "string_modules": [
+    "unique_name_module",
+    "custom_name_module",
+    "total_contribs_fmt_module",
+    "chart_module"
+  ],
+  "show_avatar": true
 }
 ```
 
@@ -59,3 +87,6 @@ _Example for a very basic change of colors_
 ## TODO
 
 - [ ] Add customisability (what a hard word to pronounce)
+
+```
+```

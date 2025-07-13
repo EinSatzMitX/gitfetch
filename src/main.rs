@@ -116,6 +116,7 @@ struct GitfetchConfig {
     color_levels: Option<Vec<(u8, u8, u8)>>,
     username_color: Option<(u8, u8, u8)>,
     string_modules: Option<Vec<String>>,
+    show_avatar: Option<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -208,19 +209,33 @@ async fn main() -> octocrab::Result<()> {
     let user = resp.data.user;
 
     // Fetch the raw image bytes with reqwest
-    let img_bytes = reqwest::get(user.avatar_url)
-        .await
-        .unwrap()
-        .bytes()
-        .await
-        .unwrap();
+    // Decide whether or not to fetch the bytes
+    //
+    //
+    let show_avatar = gitfetch_config
+        .as_ref()
+        .and_then(|cfg| cfg.show_avatar)
+        .unwrap_or(true);
+    let img_opt = if show_avatar {
+        // Fetch the raw image bytes
+        let img_bytes = reqwest::get(&user.avatar_url)
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
 
-    // Decode into an image::DynamicImage
-    let img = ImageReader::new(std::io::Cursor::new(img_bytes))
-        .with_guessed_format()
-        .unwrap()
-        .decode()
-        .unwrap();
+        // Decode into a DynamicImage
+        let img = ImageReader::new(std::io::Cursor::new(img_bytes))
+            .with_guessed_format()
+            .unwrap()
+            .decode()
+            .unwrap();
+
+        Some(img)
+    } else {
+        None
+    };
 
     let viuer_config = Config {
         // position on the screen:
@@ -291,13 +306,13 @@ async fn main() -> octocrab::Result<()> {
         // …add new modules here in the desired default order…
     ];
 
-    // 2) Also build a lookup map so we can grab modules by name fast
+    // Build a lookup map to grab modules by name fast
     let mut module_map: HashMap<_, _> = default_modules
         .iter()
         .map(|m| (m.name.clone(), m.clone()))
         .collect();
 
-    // 3) Decide final order
+    // Decide final order
     let modules_to_render: Vec<StringModule> = if let Some(cfg) = &gitfetch_config {
         if let Some(order) = &cfg.string_modules {
             // User-specified order: keep only known names, in that sequence
@@ -315,8 +330,10 @@ async fn main() -> octocrab::Result<()> {
     };
 
     /* Section, where the output is printed */
+    if let Some(img) = img_opt {
+        viuer::print(&img, &viuer_config).unwrap();
+    }
 
-    viuer::print(&img, &viuer_config).unwrap();
     for i in modules_to_render {
         println!("{}", i.contents);
     }
