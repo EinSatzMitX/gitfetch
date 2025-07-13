@@ -37,6 +37,12 @@ struct ContributionsCollection {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+struct CountConnection {
+    total_count: u32,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 struct UserData {
     login: String,         // maps from `login`
     name: Option<String>,  // `name` can be null
@@ -46,6 +52,9 @@ struct UserData {
     location: Option<String>,
     website_url: Option<String>,
     twitter_username: Option<String>,
+
+    followers: CountConnection,
+    following: CountConnection,
 
     avatar_url: String,
     contributions_collection: ContributionsCollection,
@@ -173,6 +182,12 @@ async fn main() -> octocrab::Result<()> {
           location
           websiteUrl
           twitterUsername
+          followers {
+            totalCount
+          }
+          following {
+            totalCount
+          }
           contributionsCollection {
             contributionCalendar {
               weeks {
@@ -298,9 +313,21 @@ async fn main() -> octocrab::Result<()> {
         name: "total_contribs_fmt_module".to_string(),
     };
 
+    let followers_module = StringModule {
+        contents: format!("Followers: {}", user.followers.total_count),
+        name: "followers_module".to_string(),
+    };
+
+    let following_module = StringModule {
+        contents: format!("Following: {}", user.following.total_count),
+        name: "following_module".to_string(),
+    };
+
     let default_modules: Vec<StringModule> = vec![
         unique_name_module,
         custom_name_module,
+        followers_module,
+        following_module,
         total_contribs_fmt_module,
         chart_module,
         // …add new modules here in the desired default order…

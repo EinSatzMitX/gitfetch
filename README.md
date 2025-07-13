@@ -67,6 +67,8 @@ writing to `~/.config/gitfetch/config.json`
   "string_modules": [
     "unique_name_module",
     "custom_name_module",
+    "followers_module",
+    "following_module",
     "total_contribs_fmt_module",
     "chart_module"
   ],
@@ -86,7 +88,9 @@ _Example for a very basic change of colors_
 
 ## TODO
 
-- [ ] Add customisability (what a hard word to pronounce)
-
-```
-```
+- [x] Add customisability (what a hard word to pronounce)
+- Modules
+  - [ ] Top languages used modules
+  - [x] Followers module
+  - [ ] Stars module (total, avg stars/repo)
+  - [ ] Commit Streak module (current, highest)
